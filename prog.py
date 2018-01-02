@@ -21,7 +21,6 @@ def normalize_caseless(text):
 def caseless_equal(left, right):
     return normalize_caseless(left) == normalize_caseless(right)
 
-    
 #should be made more robust, but this fits my needs thus far
 def sanitize_filename(text):
     return text.replace(":", "-")
@@ -32,7 +31,7 @@ def search_movie(movie_title):
     #
     url = BASE_URL + unidecode.unidecode(movie_title).replace(" ", "+")
     #!! need to santize ":" out of these filenames
-    out_file = "search_result_" + str(movie_title) + ".json"
+    out_file = "search_result_" + sanitize_filename(str(movie_title)) + ".json"
     #don't download the json if we already have results for the same search
     if os.path.isfile(out_file):
         return out_file
@@ -46,26 +45,34 @@ def find_title_in_json(json_file, movie_title, year):
     
     def iterate_through_results(json_file, movie_title, year):
         #the json index starts at 1 
+        #don't bother with second page (results above 20), don't need it for my use case
         max_ind = min(json_file['total_results'] - 1, 20)
-        #don't bother with second page, don't need it for my use case
         for i in range(0, max_ind):
-            print(i)
             if caseless_equal(movie_title, json_file['results'][i]["title"]):
                 json_year = json_file['results'][i]["release_date"][0:4]
                 if year == json_year:
-                    return i
+                    return {"ind": i, "type": "title"}
+        for i in range(0, max_ind):
+            json_year = json_file['results'][i]["release_date"][0:4]
+            if year == json_year:
+                return {"ind": i, "type": "year"}
         #we couldn't find a match
-        return -1
+        return {"ind": -1, "type": "fail"}
     if (j['total_results'] == 0):
-        warnings.warn("no search results found")
+        warn_str = "no search results found for: " + movie_title + " " + year
+        warnings.warn(warn_str)
         return None
     if (j['total_results'] == 1):
         result_ind = 0
     else:
-        print("multi results")
-        result_ind = iterate_through_results(j, movie_title, year)
+        result_dict = iterate_through_results(j, movie_title, year)
+        if result_dict['type'] == 'year':
+            warn_str = "match not found for title: " + movie_title + ". Match found with " + year + ". Possible foreign language title?"
+            warnings.warn(warn_str)
+        result_ind = result_dict['ind']
     if result_ind == -1:
-        warnings.warn("title match not found in JSON search results. possible foreign language title?")
+        warn_str = "match not found in JSON search results for: " + movie_title + " " + year + ". Possible foreign language title?"
+        warnings.warn(warn_str)
         #just return the first result and hope for the best
         result_ind = 0
     single_json = j['results'][result_ind]
@@ -82,14 +89,14 @@ def download_poster(movie_title, year, rating=None):
     j = get_json(movie_title, year)
     if j is not None:
         poster_url = "https://image.tmdb.org/t/p/w" + poster_width + j["poster_path"]
-        print(poster_url)
+        title_for_filename = j["title"]
+        title_for_filename = sanitize_filename(title_for_filename)
         if rating:
-            out_filename = "\\" + str(rating) + "\\" + j["title"] + ".jpg"
+            out_filename = "\\" + str(rating) + "\\" + title_for_filename + ".jpg"
         else:
-            out_filename = j["title"] + ".jpg"
+            out_filename = title_for_filename + ".jpg"
         if os.path.isfile(cwd + out_filename) == False:
             wget.download(poster_url, cwd + out_filename)
-            print(cwd + out_filename)
 
 def download_posters(movies_csv):
 #movies_csv looks like this:
@@ -98,8 +105,6 @@ def download_posters(movies_csv):
         movies = unicodecsv.reader(f_input, encoding='utf-8-sig', delimiter=',', quotechar='"')
         for movie, rating, year in movies:
             #if movies.line_num >= 33:
-            print(movies.line_num)
-            print(movie + " " + rating + " " + year)
             rating = str(math.ceil(int(rating)/2))
             download_poster(movie, year, rating)
 
