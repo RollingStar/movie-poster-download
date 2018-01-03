@@ -111,9 +111,9 @@ def download_posters(movies_csv):
 
 def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
     def calculate_padding(poster_padding_decimal, num_posters, poster_size):
-        pad_size = poster_size * poster_padding_decimal
-        size_with_pad = pad_size + poster_size
-        poster_positions = range(0, num_posters*size_with_pad, size_with_pad)
+        pad_size = int(poster_size * poster_padding_decimal)
+        size_with_pad = int(pad_size + poster_size)
+        poster_positions = range(0, int(num_posters*size_with_pad), size_with_pad)
         pixels = num_posters * size_with_pad
         #make a border the same width of the padding as well
         pixels = 2 * pad_size + pixels
@@ -129,30 +129,33 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
         i = 0
         w = 0
         v = 0
-        out_img = Image.new("RGB", (width_info["pixels"], height_info["pixels"]))
+        #transparent background
+        out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color="#00000000")
         for entry in it:
             if entry.is_file() and entry.name.endswith(".jpg"):
                 #https://gist.github.com/glombard/7cd166e311992a828675
-                if(entry.name == "Contact.jpg"):
-                    if i < posters_per_img:
-                        #we fill left-right, top-bottom, so v < num_posters_vert should always be True
-                        if w < num_posters_hor and v < num_posters_vert:
-                            in_poster = Image.open(folder_of_posters + "\\" + entry.name)
-                            print(in_poster.format, in_poster.size, in_poster.mode)
-                            out_image.paste(in_poster, width_info["poster_positions"][w], height_info["poster_positions"][v], POSTER_WIDTH + width_info["poster_positions"][w], POSTER_HEIGHT + height_info["poster_positions"][v])
-                            i = i+1
-                            w = w+1
-                            if w >= num_posters_hor:
-                                v = v+1
-                                w = 0
-                        else:
-                            #shouldn't happen
-                            #new line
+                if i < posters_per_img:
+                    #we fill left-right, top-bottom, so v < num_posters_vert should always be True
+                    if w < num_posters_hor and v < num_posters_vert:
+                        in_poster = Image.open(folder_of_posters + "\\" + entry.name)
+                        print(in_poster.format, in_poster.size, in_poster.mode)
+                        out_img.paste(in_poster, (width_info["poster_positions"][w], height_info["poster_positions"][v], in_poster.size[0] + width_info["poster_positions"][w], in_poster.size[1] + height_info["poster_positions"][v]))
+                        i = i+1
+                        w = w+1
+                        if w >= num_posters_hor:
                             v = v+1
+                            w = 0
                     else:
-                        # new page
-                        #not implemented
-                        Pass
+                        #shouldn't happen
+                        #new line
+                        v = v+1
+                else:
+                    # new page
+                    #not implemented
+                    Pass
+                print(i)
+                print(w)
+                print(v)
         out_img.show()
 def make_images(root_folder):
     return True
