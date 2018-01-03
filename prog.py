@@ -109,20 +109,35 @@ def download_posters(movies_csv):
             rating = str(math.ceil(int(rating)/2))
             download_poster(movie, year, rating)
 
+#https://stackoverflow.com/questions/250357/truncate-a-string-without-ending-in-the-middle-of-a-word
+def smart_truncate(content, length=100, suffix='...'):
+    if len(content) <= length:
+        return content
+    else:
+        return content[:length].rsplit(' ', 1)[0]+suffix
+
 def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
     def calculate_padding(poster_padding_decimal, num_posters, poster_size):
+        print(poster_padding_decimal, num_posters, poster_size)
         pad_size = int(poster_size * poster_padding_decimal)
+        print(pad_size)
         size_with_pad = int(pad_size + poster_size)
+        print(size_with_pad)
         poster_positions = range(0, int(num_posters*size_with_pad), size_with_pad)
         pixels = num_posters * size_with_pad
         #make a border the same width of the padding as well
-        pixels = 2 * pad_size + pixels
+        #don't need to add border on the left/top; this is accounted for already
+        print(pixels)
+        pixels = pad_size + pixels
+        print(pixels)
         out_dict = {"pixels": pixels, "poster_positions": poster_positions, "pad_size": pad_size}
         return out_dict
     poster_padding_w = .1
     poster_padding_vert = .15
     width_info = calculate_padding(poster_padding_w, num_posters_hor, int(POSTER_WIDTH))
     height_info = calculate_padding(poster_padding_vert, num_posters_vert, POSTER_HEIGHT)
+    #pad twice for the last row of the vertical because we draw text in the padding
+    height_info["pixels"] = height_info["pixels"] + height_info["pad_size"]
     #https://docs.python.org/3/library/os.html#os.scandir
     with os.scandir(folder_of_posters) as it:
         posters_per_img = num_posters_hor * num_posters_vert
@@ -130,7 +145,8 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
         w = 0
         v = 0
         #transparent background
-        out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color="#00000000")
+        out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color="#ffffffcc")
+        font = ImageFont.truetype("arial.ttf", 20)
         for entry in it:
             # Let's hope there are no posters available with the API that are not JPGs
             if entry.is_file() and entry.name.endswith(".jpg"):
@@ -144,6 +160,13 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
                         w_end = in_poster.size[0] + width_info["poster_positions"][w] + width_info["pad_size"]
                         v_end = in_poster.size[1] + height_info["poster_positions"][v] + height_info["pad_size"]
                         out_img.paste(in_poster, (w_start, v_start, w_end, v_end))
+                        draw = ImageDraw.Draw(out_img)
+                        title_print = entry.name[:-4]
+                        title_print = smart_truncate(title_print, 15)
+                        #draw text in the same spot, regardless of poster height.
+                        #could break if you have a really tall poster, but then you have other problems
+                        v_end_for_text = .2 * height_info["pad_size"] + POSTER_HEIGHT + height_info["poster_positions"][v] + height_info["pad_size"]
+                        draw.text((w_start, v_end_for_text), title_print, font=font, fill="black")
                         i = i+1
                         w = w+1
                         if w >= num_posters_hor:
@@ -154,18 +177,34 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
                         #new line
                         v = v+1
                 else:
-                    # new page
-                    #not implemented
-                    Pass
+                    i = 0
+                    w = 0
+                    v = 0
+                    out_img.show()
+                    #need to make a function out of the image creation logic
+                    #otherwise we skip posters that trigger the reset
+                    out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color="#ffffffcc")
+        #if we don't fill every row, crop image after we make it
+        # we do i+1 even after the last image
+        i = i-1
+        if i <= num_posters_hor * (num_posters_vert - 1):
+            #!! off by one error here, also all the cropped posters are cropped too short, probable culprit is crop_v
+            #no crop on width
+            crop_w = width_info["pixels"]
+            v = max(math.ceil(i/num_posters_hor) - 1, 0)
+            crop_v = .2 * height_info["pad_size"] + POSTER_HEIGHT + height_info["poster_positions"][v] + height_info["pad_size"]
+            out_img = out_img.crop((0, 0, crop_w, crop_v))
+        print(i)
+        print(out_img)
         out_img.show()
-def make_images(root_folder):
-    return True
-    
+        
+        
 cwd = os.getcwd()
 api_file = open("api.txt")
 key = api_file.read()
 base_url="https://api.themoviedb.org/3/search/movie?api_key=" + key + "&query="
 for i in range(1,6):
     os.makedirs(str(i), exist_ok=True)
+    make_image(str(i))
 #download_posters("movies.csv")
-make_image("5")
+#make_image("5")
