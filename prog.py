@@ -116,20 +116,16 @@ def smart_truncate(content, length=100, suffix='...'):
     else:
         return content[:length].rsplit(' ', 1)[0]+suffix
 
+
 def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
     def calculate_padding(poster_padding_decimal, num_posters, poster_size):
-        print(poster_padding_decimal, num_posters, poster_size)
         pad_size = int(poster_size * poster_padding_decimal)
-        print(pad_size)
         size_with_pad = int(pad_size + poster_size)
-        print(size_with_pad)
         poster_positions = range(0, int(num_posters*size_with_pad), size_with_pad)
         pixels = num_posters * size_with_pad
         #make a border the same width of the padding as well
         #don't need to add border on the left/top; this is accounted for already
-        print(pixels)
         pixels = pad_size + pixels
-        print(pixels)
         out_dict = {"pixels": pixels, "poster_positions": poster_positions, "pad_size": pad_size}
         return out_dict
     poster_padding_w = .1
@@ -138,66 +134,85 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
     height_info = calculate_padding(poster_padding_vert, num_posters_vert, POSTER_HEIGHT)
     #pad twice for the last row of the vertical because we draw text in the padding
     height_info["pixels"] = height_info["pixels"] + height_info["pad_size"]
-    #https://docs.python.org/3/library/os.html#os.scandir
+    def add_star_text(my_img):
+        draw = ImageDraw.Draw(my_img)
+        draw.text((0, 0), rating_str, font=star_font, fill="black")
+        return my_img
     with os.scandir(folder_of_posters) as it:
         posters_per_img = num_posters_hor * num_posters_vert
         i = 0
         w = 0
         v = 0
-        #transparent background
-        out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color="#ffffffcc")
+        #color
+        out_bg = "#D8F6FF"
+        out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color=out_bg)
         font = ImageFont.truetype("arial.ttf", 20)
+        star_font = ImageFont.truetype("seguisym.ttf", 20)
+        rating_str = ""
+        #make strings of 5 stars, filled according to the rating
+        for j in range(0, int(folder_of_posters)):
+            rating_str = rating_str + "★"
+        max_rating_len = 5
+        while len(rating_str) < max_rating_len:
+            rating_str = rating_str + "☆"
         for entry in it:
             # Let's hope there are no posters available with the API that are not JPGs
             if entry.is_file() and entry.name.endswith(".jpg"):
-                #https://gist.github.com/glombard/7cd166e311992a828675
-                if i < posters_per_img:
-                    #we fill left-right, top-bottom, so v < num_posters_vert should always be True
-                    if w < num_posters_hor and v < num_posters_vert:
-                        in_poster = Image.open(folder_of_posters + "\\" + entry.name)
-                        w_start = width_info["poster_positions"][w] + width_info["pad_size"]
-                        v_start = height_info["poster_positions"][v] + height_info["pad_size"]
-                        w_end = in_poster.size[0] + width_info["poster_positions"][w] + width_info["pad_size"]
-                        v_end = in_poster.size[1] + height_info["poster_positions"][v] + height_info["pad_size"]
-                        out_img.paste(in_poster, (w_start, v_start, w_end, v_end))
-                        draw = ImageDraw.Draw(out_img)
-                        title_print = entry.name[:-4]
-                        title_print = smart_truncate(title_print, 15)
-                        #draw text in the same spot, regardless of poster height.
-                        #could break if you have a really tall poster, but then you have other problems
-                        v_end_for_text = .2 * height_info["pad_size"] + POSTER_HEIGHT + height_info["poster_positions"][v] + height_info["pad_size"]
-                        draw.text((w_start, v_end_for_text), title_print, font=font, fill="black")
-                        i = i+1
-                        w = w+1
-                        if w >= num_posters_hor:
+                done_with_poster = False
+                while not done_with_poster:
+                    #https://gist.github.com/glombard/7cd166e311992a828675
+                    if i < posters_per_img:
+                        #we fill left-right, top-bottom, so v < num_posters_vert should always be True
+                        if w < num_posters_hor and v < num_posters_vert:
+                            in_poster = Image.open(folder_of_posters + "\\" + entry.name)
+                            w_start = width_info["poster_positions"][w] + width_info["pad_size"]
+                            v_start = height_info["poster_positions"][v] + height_info["pad_size"]
+                            w_end = in_poster.size[0] + width_info["poster_positions"][w] + width_info["pad_size"]
+                            v_end = in_poster.size[1] + height_info["poster_positions"][v] + height_info["pad_size"]
+                            out_img.paste(in_poster, (w_start, v_start, w_end, v_end))
+                            draw = ImageDraw.Draw(out_img)
+                            #remove ".jpg"
+                            title_print = entry.name[:-4]
+                            title_print = smart_truncate(title_print, 15)
+                            #draw text in the same spot, regardless of poster height.
+                            #could break if you have a really tall poster, but then you have other problems
+                            # I don't know why .2 is here
+                            v_end_for_text = .2 * height_info["pad_size"] + POSTER_HEIGHT + height_info["poster_positions"][v] + height_info["pad_size"]
+                            print("draw1")
+                            draw.text((w_start, v_end_for_text), title_print, font=font, fill="black")
+                            i = i+1
+                            w = w+1
+                            if w >= num_posters_hor:
+                                v = v+1
+                                w = 0
+                        else:
+                            #shouldn't happen
+                            #new line
                             v = v+1
-                            w = 0
+                        done_with_poster = True
                     else:
-                        #shouldn't happen
-                        #new line
-                        v = v+1
-                else:
-                    i = 0
-                    w = 0
-                    v = 0
-                    out_img.show()
-                    #need to make a function out of the image creation logic
-                    #otherwise we skip posters that trigger the reset
-                    out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color="#ffffffcc")
+                        i = 0
+                        w = 0
+                        v = 0
+                        out_img = add_star_text(out_img)
+                        out_img.show()
+                        #start a new image and keep done_with_poster = False so we don't skip this poster
+                        out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color=out_bg)
         #if we don't fill every row, crop image after we make it
-        # we do i+1 even after the last image
-        i = i-1
         if i <= num_posters_hor * (num_posters_vert - 1):
-            #!! off by one error here, also all the cropped posters are cropped too short, probable culprit is crop_v
-            #no crop on width
+            #don't crop by width, although we could
             crop_w = width_info["pixels"]
-            v = max(math.ceil(i/num_posters_hor) - 1, 0)
-            crop_v = .2 * height_info["pad_size"] + POSTER_HEIGHT + height_info["poster_positions"][v] + height_info["pad_size"]
+            #w is set to 0 after every row
+            #if w==0 at the end of our iteration, that means the final row is blank
+            if w == 0:
+                v = v-1
+            #makes the padding symmetric on the top and bottom
+            #3 = once for the top + once for the text at the bottom + once for the padding below the text
+            crop_v = POSTER_HEIGHT + height_info["poster_positions"][v] + (3 * height_info["pad_size"])
             out_img = out_img.crop((0, 0, crop_w, crop_v))
-        print(i)
-        print(out_img)
+        print("drawing2")
+        out_img = add_star_text(out_img)
         out_img.show()
-        
         
 cwd = os.getcwd()
 api_file = open("api.txt")
@@ -207,4 +222,5 @@ for i in range(1,6):
     os.makedirs(str(i), exist_ok=True)
     make_image(str(i))
 #download_posters("movies.csv")
-#make_image("5")
+#make_image("3")
+#make_image("1")
