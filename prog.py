@@ -12,7 +12,9 @@ from PIL import Image
 from time import gmtime, strftime
 
 # https://developers.themoviedb.org/3/configuration/get-api-configuration
-poster_width = str(154)
+POSTER_WIDTH = str(154)
+#may not be exactly corrent in all cases
+POSTER_HEIGHT = math.ceil(1.5*int(POSTER_WIDTH))
 
 #https://stackoverflow.com/questions/319426/how-do-i-do-a-case-insensitive-string-comparison/29247821
 def normalize_caseless(text):
@@ -29,7 +31,7 @@ def sanitize_filename(text):
     
 def search_movie(movie_title):
     #might or may not make sense to normalize the title before we search
-    url = BASE_URL + unidecode.unidecode(movie_title).replace(" ", "+")
+    url = base_url + unidecode.unidecode(movie_title).replace(" ", "+")
     out_file = "search_result_" + sanitize_filename(str(movie_title)) + ".json"
     #don't download the json if we already have results for the same search
     if os.path.isfile(out_file):
@@ -87,7 +89,7 @@ def get_json(movie_title, year):
 def download_poster(movie_title, year, rating=None):
     j = get_json(movie_title, year)
     if j is not None:
-        poster_url = "https://image.tmdb.org/t/p/w" + poster_width + j["poster_path"]
+        poster_url = "https://image.tmdb.org/t/p/w" + POSTER_WIDTH + j["poster_path"]
         title_for_filename = j["title"]
         title_for_filename = sanitize_filename(title_for_filename)
         if rating:
@@ -107,7 +109,17 @@ def download_posters(movies_csv):
             rating = str(math.ceil(int(rating)/2))
             download_poster(movie, year, rating)
 
-def make_image(folder_of_posters):
+def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
+    def calculate_padding(poster_padding_percent, num_posters, poster_size):
+        pixels = (poster_size * poster_padding_percent) + poster_size
+        pixels = num_posters * pixels
+        #make a border the same width of the padding as well
+        pixels = 2 * (poster_size * poster_padding_percent) + pixels
+        return pixels
+    poster_padding_w = .15
+    poster_padding_vert = .15
+    img_width = calculate_padding(poster_padding_w, num_posters_hor, int(poster_size))
+    img_height = calculate_padding(poster_padding_vert, num_posters_vert, POSTER_HEIGHT)
     #https://docs.python.org/3/library/os.html#os.scandir
     with os.scandir(folder_of_posters) as it:
         for entry in it:
@@ -115,6 +127,7 @@ def make_image(folder_of_posters):
                 if(entry.name == "Contact.jpg"):
                     im = Image.open(folder_of_posters + "\\" + entry.name)
                     print(im.format, im.size, im.mode)
+                    result = Image.new("RGB", (800, 800))
                     im.show()
 def make_images(root_folder):
     return True
@@ -122,7 +135,7 @@ def make_images(root_folder):
 cwd = os.getcwd()
 api_file = open("api.txt")
 key = api_file.read()
-BASE_URL="https://api.themoviedb.org/3/search/movie?api_key=" + key + "&query="
+base_url="https://api.themoviedb.org/3/search/movie?api_key=" + key + "&query="
 for i in range(1,6):
     os.makedirs(str(i), exist_ok=True)
 #download_posters("movies.csv")
