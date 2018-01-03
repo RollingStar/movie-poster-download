@@ -8,7 +8,7 @@ import json
 import unicodecsv
 import urllib
 import warnings
-from PIL import Image
+from PIL import Image, ImageFont, ImageDraw
 from time import gmtime, strftime
 
 # https://developers.themoviedb.org/3/configuration/get-api-configuration
@@ -117,9 +117,9 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
         pixels = num_posters * size_with_pad
         #make a border the same width of the padding as well
         pixels = 2 * pad_size + pixels
-        out_dict = {"pixels": pixels, "poster_positions": poster_positions}
+        out_dict = {"pixels": pixels, "poster_positions": poster_positions, "pad_size": pad_size}
         return out_dict
-    poster_padding_w = .15
+    poster_padding_w = .1
     poster_padding_vert = .15
     width_info = calculate_padding(poster_padding_w, num_posters_hor, int(POSTER_WIDTH))
     height_info = calculate_padding(poster_padding_vert, num_posters_vert, POSTER_HEIGHT)
@@ -132,14 +132,18 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
         #transparent background
         out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color="#00000000")
         for entry in it:
+            # Let's hope there are no posters available with the API that are not JPGs
             if entry.is_file() and entry.name.endswith(".jpg"):
                 #https://gist.github.com/glombard/7cd166e311992a828675
                 if i < posters_per_img:
                     #we fill left-right, top-bottom, so v < num_posters_vert should always be True
                     if w < num_posters_hor and v < num_posters_vert:
                         in_poster = Image.open(folder_of_posters + "\\" + entry.name)
-                        print(in_poster.format, in_poster.size, in_poster.mode)
-                        out_img.paste(in_poster, (width_info["poster_positions"][w], height_info["poster_positions"][v], in_poster.size[0] + width_info["poster_positions"][w], in_poster.size[1] + height_info["poster_positions"][v]))
+                        w_start = width_info["poster_positions"][w] + width_info["pad_size"]
+                        v_start = height_info["poster_positions"][v] + height_info["pad_size"]
+                        w_end = in_poster.size[0] + width_info["poster_positions"][w] + width_info["pad_size"]
+                        v_end = in_poster.size[1] + height_info["poster_positions"][v] + height_info["pad_size"]
+                        out_img.paste(in_poster, (w_start, v_start, w_end, v_end))
                         i = i+1
                         w = w+1
                         if w >= num_posters_hor:
@@ -153,9 +157,6 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
                     # new page
                     #not implemented
                     Pass
-                print(i)
-                print(w)
-                print(v)
         out_img.show()
 def make_images(root_folder):
     return True
