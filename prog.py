@@ -135,9 +135,15 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
     #pad twice for the last row of the vertical because we draw text in the padding
     height_info["pixels"] = height_info["pixels"] + height_info["pad_size"]
     def add_star_text(my_img):
-        draw = ImageDraw.Draw(my_img)
-        draw.text((0, 0), rating_str, font=star_font, fill="black")
         return my_img
+        # x = my_img.size[0]
+        # y = my_img.size[1]
+        # pad_to_add = int(my_img.size[1] * .1)
+        # #add pad_to_add space to the top of the image
+        # my_img = my_img.crop((0, -pad_to_add, x, y))
+        # draw = ImageDraw.Draw(my_img)
+        # draw.text((0, 0), rating_str, font=star_font, fill="black")
+        # return my_img
     with os.scandir(folder_of_posters) as it:
         posters_per_img = num_posters_hor * num_posters_vert
         i = 0
@@ -147,7 +153,7 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
         out_bg = "#D8F6FF"
         out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color=out_bg)
         font = ImageFont.truetype("arial.ttf", 20)
-        star_font = ImageFont.truetype("seguisym.ttf", 20)
+        star_font = ImageFont.truetype("seguisym.ttf", 50)
         rating_str = ""
         #make strings of 5 stars, filled according to the rating
         for j in range(0, int(folder_of_posters)):
@@ -155,6 +161,7 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
         max_rating_len = 5
         while len(rating_str) < max_rating_len:
             rating_str = rating_str + "☆"
+        img_num = 0
         for entry in it:
             # Let's hope there are no posters available with the API that are not JPGs
             if entry.is_file() and entry.name.endswith(".jpg"):
@@ -178,7 +185,6 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
                             #could break if you have a really tall poster, but then you have other problems
                             # I don't know why .2 is here
                             v_end_for_text = .2 * height_info["pad_size"] + POSTER_HEIGHT + height_info["poster_positions"][v] + height_info["pad_size"]
-                            print("draw1")
                             draw.text((w_start, v_end_for_text), title_print, font=font, fill="black")
                             i = i+1
                             w = w+1
@@ -195,7 +201,8 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
                         w = 0
                         v = 0
                         out_img = add_star_text(out_img)
-                        out_img.show()
+                        out_img.save(folder_of_posters + str(img_num) + ".png")
+                        img_num = img_num + 1
                         #start a new image and keep done_with_poster = False so we don't skip this poster
                         out_img = Image.new("RGBA", (width_info["pixels"], height_info["pixels"]), color=out_bg)
         #if we don't fill every row, crop image after we make it
@@ -210,9 +217,8 @@ def make_image(folder_of_posters, num_posters_hor=5, num_posters_vert=5):
             #3 = once for the top + once for the text at the bottom + once for the padding below the text
             crop_v = POSTER_HEIGHT + height_info["poster_positions"][v] + (3 * height_info["pad_size"])
             out_img = out_img.crop((0, 0, crop_w, crop_v))
-        print("drawing2")
         out_img = add_star_text(out_img)
-        out_img.show()
+        out_img.save(folder_of_posters + str(img_num) + ".png")
         
 cwd = os.getcwd()
 api_file = open("api.txt")
