@@ -9,6 +9,8 @@ Get an API key from [The Movie DB](https://www.themoviedb.org/documentation/api)
 pip install unidecode
 pip install unicodecsv
 pip install Pillow
+pip install wget
+pip install requests
 ```
 
 # Example output
