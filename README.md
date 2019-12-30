@@ -18,7 +18,7 @@ pip install requests
 
 Defined at the start of the script. Caches movie posters and JSON results:
 
-* Main dir (`os.getwd()`)
+* Main folder (`os.getcwd()`)
   * `posters`
   * `json` (search results)
   * `output` (final output)
