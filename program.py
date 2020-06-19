@@ -27,7 +27,7 @@ POSTER_DIR = os.path.join(MAIN_DIR, "posters")
 JSON_DIR = os.path.join(MAIN_DIR, 'json')
 OUTPUT_DIR = os.path.join(MAIN_DIR, 'output')
 
-MIN_DATE = "2020-01-01"
+MIN_DATE = "1990-01-01"
 MAX_DATE = "2099-12-31"
 FILENAME_PREFIX = datetime.today().strftime('%Y-%m-%d')
 
