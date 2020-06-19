@@ -1,7 +1,5 @@
 *api*.txt
-*search_result*
 *.csv
-*.jpg
-*/*
-*.bat
-*.png
+output
+json
+posters
