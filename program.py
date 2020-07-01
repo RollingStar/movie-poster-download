@@ -3,6 +3,7 @@ import math
 import os
 import json
 import shutil
+import argparse
 import unicodedata
 import unidecode
 import logging
@@ -26,11 +27,6 @@ CSV_FILE = os.path.join(MAIN_DIR, "ratings.csv")
 POSTER_DIR = os.path.join(MAIN_DIR, "posters")
 JSON_DIR = os.path.join(MAIN_DIR, 'json')
 OUTPUT_DIR = os.path.join(MAIN_DIR, 'output')
-
-MIN_DATE = "1990-01-01"
-MAX_DATE = "2099-12-31"
-FILENAME_PREFIX = datetime.today().strftime('%Y-%m-%d')
-
 # possible types are ['movie', 'short', 'tvEpisode', 'tvMiniSeries', 'tvMovie', 'tvSeries', 'tvShort', 'tvSpecial', 'video']
 WANTED_TYPES = ['movie', 'tvMovie', 'tvSpecial', 'video']
 # does the header depend on the language of the user requesting the CSV?
@@ -469,7 +465,22 @@ def postprocess_df(df):
     return(df)
 
 
-df = imdb_csv_to_pandas(CSV_FILE)
-# do stuff we can only do after we get the JSONs
-df = postprocess_df(df)
-make_images_by_rating(df)
+if __name__ == "__main__":
+    # init dates
+    now = datetime.today()
+    parser = argparse.ArgumentParser(description='Download movie posters and make images from them.',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-sd', default="1990-01-01",
+                        help="Start date (YYYY-MM-DD). Only include ratings from this date onward.")
+    parser.add_argument('-ed', default="2099-12-31",
+                        help="End date (YYYY-MM-DD). Only include ratings from before this date.")
+    args = parser.parse_args()
+    MIN_DATE = args.sd
+    MAX_DATE = args.ed
+    FILENAME_PREFIX = now.strftime('%Y-%m-%d')
+
+    # run the code
+    df = imdb_csv_to_pandas(CSV_FILE)
+    # do stuff we can only do after we get the JSONs
+    df = postprocess_df(df)
+    make_images_by_rating(df)
