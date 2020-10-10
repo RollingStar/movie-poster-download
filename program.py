@@ -32,10 +32,10 @@ WANTED_TYPES = ['movie', 'tvMovie', 'tvSpecial', 'video']
 # does the header depend on the language of the user requesting the CSV?
 CSV_HEADER = "Const,Your Rating,Date Rated,Title,URL,Title Type,IMDb Rating,Runtime (mins),Year,Genres,Num Votes,Release Date,Directors"
 # https://developers.themoviedb.org/3/configuration/get-api-configuration
-POSTER_WIDTH = str(154)
+POSTER_WIDTH = 154
 # not be exactly correct in all cases
 # there's code in make_single_poster to center short posters vertically
-POSTER_HEIGHT = math.ceil(1.5 * int(POSTER_WIDTH))
+POSTER_HEIGHT = math.ceil(1.5 * POSTER_WIDTH)
 POSTERS_PER_ROW = 5
 POSTERS_PER_COL = 5
 POSTERS_PER_PAGE = POSTERS_PER_ROW * POSTERS_PER_COL
@@ -114,7 +114,8 @@ def imdb_csv_to_pandas(file):
     df = pd.read_csv(file, encoding='latin-1')
     df = df[df['Title Type'].isin(WANTED_TYPES)]
     df = df.rename(columns={'Title': 'movie',
-                            'Year': 'year', 'Date Rated': 'date_rated'})
+                            'Year': 'year', 'Date Rated': 'date_rated',
+                            "Runtime (mins)": 'runtime'})
     df = df.astype({'year': 'int64'})
     df['rating'] = df['Your Rating'].map(five_star_scale)
     # to be sorted on in pandas group by. tried something more logical, didn't work.
@@ -124,7 +125,9 @@ def imdb_csv_to_pandas(file):
     df['date_rated'] = pd.to_datetime(df['date_rated'])
     df = df.loc[df['date_rated'] >= pd.to_datetime(MIN_DATE)]
     df = df.loc[df['date_rated'] <= pd.to_datetime(MAX_DATE)]
-
+    df = df.loc[df['runtime'] >= 40]
+    # TV compilation incorrectly tagged as a video
+    df = df.loc[df['movie'] != 'Strongbad_email.exe']
     df['movie'] = df[['Const', 'movie', 'year', 'rating', 'base_filename']].apply(
         func=row_dl_poster,  axis='columns')
     df = df[['movie', 'year', 'rating', 'base_filename', 'negative_rating']]
@@ -268,7 +271,7 @@ def download_poster(movie_title, year, base_filename,
                 copy_none_poster()
         else:
             poster_url = "https://image.tmdb.org/t/p/w" + \
-                POSTER_WIDTH + j["poster_path"]
+                str(POSTER_WIDTH) + j["poster_path"]
             if not os.path.isfile(out_filename):
                 wget.download(poster_url, out_filename)
         return(j["title"])
@@ -302,17 +305,17 @@ def make_single_poster(df, folder_of_posters, font):
     # center too-short posters
     start_y = math.floor((POSTER_HEIGHT - in_height)/2)
     out_img = Image.new("RGBA", size=(
-        int(POSTER_WIDTH), height), color=BG_COLOR)
-    # in_poster = in_poster.crop((0, start_y, int(POSTER_WIDTH), int(POSTER_HEIGHT)))
+        POSTER_WIDTH, height), color=BG_COLOR)
+    # in_poster = in_poster.crop((0, start_y, POSTER_WIDTH, int(POSTER_HEIGHT)))
     # make a blank slate with BG_COLOR so the text is cropped at POSTER_WIDTH, not sooner if the poster is too narrow
-    # temp_canvas = Image.new("RGBA", size=(int(POSTER_WIDTH), int(POSTER_HEIGHT)), color=BG_COLOR)
+    # temp_canvas = Image.new("RGBA", size=(POSTER_WIDTH, int(POSTER_HEIGHT)), color=BG_COLOR)
     # temp_canvas.paste(in_poster, (0, start_y))
-    # if (smart_truncate(df['movie'], 15) == "Heavy Metal..."):
-    #     temp_canvas.show()
-    #     in_poster.show()
     out_img.paste(in_poster, (0, start_y))
     draw = ImageDraw.Draw(out_img)
-    title_print = smart_truncate(df['movie'], 15)
+    title_print = df['movie']
+    tw, th = draw.textsize(title_print, font=font)
+    if tw > POSTER_WIDTH:
+        title_print = smart_truncate(title_print, 15)
     # align text to the same spot, regardless of few-pixel
     # variations in individual poster height.
     text_y = int(POSTER_HEIGHT * (1 + .03))
@@ -328,8 +331,8 @@ def make_row(sliced_df):
     # 15% padding before first row and after last row
     # 0% padding between rows (the text is sort of a padding)
     next_x = 0
-    width_plus_pad = int(POSTER_WIDTH) + \
-        math.floor(W_PADDING * int(POSTER_WIDTH))
+    width_plus_pad = POSTER_WIDTH + \
+        math.floor(W_PADDING * POSTER_WIDTH)
     total_width = width_plus_pad * POSTERS_PER_ROW
     total_height = math.floor(POSTER_HEIGHT * (1 + V_PADDING))
     next_y = 0
@@ -350,12 +353,14 @@ def make_sub_images(df, header_text=None):
     sub-image of all the 4-star movies.
     `header_txt`: A label drawn above the image.
     Blank space is added above the image if header_text exists. '''
+    print("df len is {}".format(len(df)))
 
     def init_page(df, header_text=header_text):
-        pad_w = math.floor(W_PADDING * int(POSTER_WIDTH))
+        print("df len is {}".format(len(df)))
+        pad_w = math.floor(W_PADDING * POSTER_WIDTH)
         next_x = pad_w
         next_y = 0
-        width_plus_pad = int(POSTER_WIDTH) + pad_w
+        width_plus_pad = POSTER_WIDTH + pad_w
         total_width = width_plus_pad * POSTERS_PER_ROW
         # pad on the left of the first poster. right pad is already accounted for
         total_width = total_width + pad_w
@@ -363,8 +368,9 @@ def make_sub_images(df, header_text=None):
         # crop blank parts of image if there aren't many movies
         # ex., <6 movies
         if len(df) < POSTERS_PER_PAGE:
+            # total_height = height_plus_pad * math.ceil(len(df) / POSTERS_PER_COL)
             total_height = height_plus_pad * \
-                math.ceil(len(df) / POSTERS_PER_COL)
+                math.ceil(len(df) / POSTERS_PER_ROW)
             total_width = width_plus_pad * \
                 min(len(df), POSTERS_PER_ROW) + pad_w
             # don't make something smaller than the header_text
@@ -393,16 +399,25 @@ def make_sub_images(df, header_text=None):
             pad_y = math.floor(STAR_FONT.size * -.07)
             draw.text((pad_w, pad_y), header_text,
                       font=STAR_FONT, fill='black')
-        return(out_img, next_x, next_y, height_plus_pad)
-
+        return (out_img, next_x, next_y, height_plus_pad)
+    out_pages = []
+    if len(df) > POSTERS_PER_PAGE:
+        extra_text = ' ({} Movies)'.format(len(df))
+    else:
+        extra_text = ''
+    header_text = header_text + extra_text
     for ii, pagedf in df.groupby(np.arange(len(df)) // POSTERS_PER_PAGE):
-        out_page, next_x, next_y, height_plus_pad = init_page(df=pagedf)
+        out_page, next_x, next_y, height_plus_pad = init_page(
+            df=pagedf, header_text=header_text)
         for jj, rowdf in pagedf.groupby(np.arange(len(pagedf)) // POSTERS_PER_ROW):
             row = make_row(rowdf)
             out_page.paste(row, (next_x, next_y))
             next_y = height_plus_pad + next_y
         # will break on >25 (>POSTERS_PER_PAGE) posters
-        return(out_page)
+        out_pages.append(out_page)
+        # don't redraw header_text on multiple "pages" with the same text
+        header_text = None
+    return out_pages
 
 
 def add_watermark(main_img, text='github.com/RollingStar/movie-poster-download'):
@@ -432,8 +447,8 @@ def make_images_by_rating(df):
         rating_text = rating_text + (empty_star * (5 - rating))
         # sorted_df = subdf.sort_values(by='title_sort')
         subdf.sort_values(by='title_sort')
-        sub_img = make_sub_images(subdf, header_text=rating_text)
-        sub_imgs.append(sub_img)
+        new_imgs = make_sub_images(subdf, header_text=rating_text)
+        sub_imgs = sub_imgs + new_imgs
     # combine multiple sub-images
     # max_y = POSTER_HEIGHT * (POSTERS_PER_COL + 1)
     total_width = 0
@@ -443,25 +458,35 @@ def make_images_by_rating(df):
         total_width = max(total_width, img.width)
     main_img = Image.new("RGBA", (total_width, total_height), color=BG_COLOR)
     height_so_far = 0
-    for img in sub_imgs:
+    write_sub_files = True
+    for jj, img in enumerate(sub_imgs):
         main_img.paste(img, (0, height_so_far))
         # start the next paste below the current one
         height_so_far = img.height + height_so_far
+        if write_sub_files:
+            out_path = os.path.join(
+                OUTPUT_DIR, 'all-movies-' + FILENAME_PREFIX + '_' + str(jj) + '.png')
+            img.save(out_path)
     final_img = add_watermark(main_img)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     out_path = os.path.join(
         OUTPUT_DIR, 'all-movies-' + FILENAME_PREFIX + '.png')
+    log.debug(out_path)
     final_img.save(out_path)
     return final_img
 
 
 def postprocess_df(df):
+    if len(df) < 1:
+        log.warning("Empty DF?")
+        pdb.set_trace()
     df['title_sort'] = df[['movie']].apply(func=title_sort, axis='columns')
     # sort the df how we want it
     df = df.sort_values(by="title_sort")
     # save a LOT of trouble. remove indexes to dropped rows
     # (ex., rows that are outside the date range)
     df.reset_index(drop=True, inplace=True)
+    log.info("{} movies.".format(len(df.index)))
     return(df)
 
 
@@ -483,4 +508,6 @@ if __name__ == "__main__":
     df = imdb_csv_to_pandas(CSV_FILE)
     # do stuff we can only do after we get the JSONs
     df = postprocess_df(df)
+
+    # temp commenting out
     make_images_by_rating(df)
