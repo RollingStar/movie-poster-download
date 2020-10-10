@@ -19,9 +19,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-cwd = os.getcwd()
-
-MAIN_DIR = cwd
+MAIN_DIR = os.path.dirname(os.path.realpath(__file__))
 KEY = open(os.path.join(MAIN_DIR, "api.txt")).read()
 CSV_FILE = os.path.join(MAIN_DIR, "ratings.csv")
 POSTER_DIR = os.path.join(MAIN_DIR, "posters")
