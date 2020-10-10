@@ -18,6 +18,20 @@ pip install numpy
 pip install pandas
 ```
 
+# Usage
+
+```
+python program.py -h
+usage: program.py [-h] [-sd SD] [-ed ED]
+
+Download movie posters and make images from them.
+
+optional arguments:
+  -h, --help  show this help message and exit
+  -sd SD      Start date (YYYY-MM-DD). Only include ratings from this date onward. (default: 1990-01-01)
+  -ed ED      End date (YYYY-MM-DD). Only include ratings from before this date. (default: 2099-12-31)
+```
+
 # Directory structure
 
 Defined at the start of the script. Caches movie posters and JSON results in the current working directory (`os.getcwd()`):
