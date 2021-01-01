@@ -121,14 +121,16 @@ def imdb_csv_to_pandas(file):
     df['base_filename'] = df[['movie', 'year', 'Const']].apply(
         func=filename_from_df, axis='columns')
     df['date_rated'] = pd.to_datetime(df['date_rated'])
-    df = df.loc[df['date_rated'] >= pd.to_datetime(MIN_DATE)]
-    df = df.loc[df['date_rated'] <= pd.to_datetime(MAX_DATE)]
+    # need to subset after looking backwards for rewatches
+    # df = df.loc[df['date_rated'] >= pd.to_datetime(MIN_DATE)]
+    # df = df.loc[df['date_rated'] <= pd.to_datetime(MAX_DATE)]
     df = df.loc[df['runtime'] >= 40]
     # TV compilation incorrectly tagged as a video
     df = df.loc[df['movie'] != 'Strongbad_email.exe']
     df['movie'] = df[['Const', 'movie', 'year', 'rating', 'base_filename']].apply(
         func=row_dl_poster,  axis='columns')
-    df = df[['movie', 'year', 'rating', 'base_filename', 'negative_rating']]
+    df = df[['movie', 'year', 'rating', 'base_filename',
+             'negative_rating', 'date_rated', 'Const']]
     return(df)
 
 # https://stackoverflow.com/questions/319426/how-do-i-do-a-case-insensitive-string-comparison/29247821
@@ -286,6 +288,11 @@ def smart_truncate(content, length=100, suffix='...'):
         return content[:length].rsplit(' ', 1)[0] + suffix
 
 
+def word_truncate(content, suffix='...'):
+    '''Truncate on a whole word and add suffix.'''
+    return content.rsplit(' ', 1)[0] + suffix
+
+
 def make_single_poster(df, folder_of_posters, font):
     '''combine a poster with its label text.
     `df`: a row of the DF (one movie).'''
@@ -311,9 +318,21 @@ def make_single_poster(df, folder_of_posters, font):
     out_img.paste(in_poster, (0, start_y))
     draw = ImageDraw.Draw(out_img)
     title_print = df['movie']
+    if df['rewatch']:
+        title_print = title_print + '*'
     tw, th = draw.textsize(title_print, font=font)
-    if tw > POSTER_WIDTH:
-        title_print = smart_truncate(title_print, 15)
+    suffix = '...'
+    while tw > POSTER_WIDTH:
+        title_print = word_truncate(title_print, suffix)
+        # account for a long first word (impossible to truncate)
+        if len(title_print) <= len(suffix):
+            title_print = df['movie'][:5] + suffix
+        if df['rewatch']:
+            title_print = title_print + '*'
+        tw, th = draw.textsize(title_print, font=font)
+        log.debug("{} {} Looping...".format(title_print, tw))
+
+    tw, th = draw.textsize(title_print, font=font)
     # align text to the same spot, regardless of few-pixel
     # variations in individual poster height.
     text_y = int(POSTER_HEIGHT * (1 + .03))
@@ -400,7 +419,8 @@ def make_sub_images(df, header_text=None):
         return (out_img, next_x, next_y, height_plus_pad)
     out_pages = []
     if len(df) > POSTERS_PER_PAGE:
-        extra_text = ' ({} Movies)'.format(len(df))
+        extra_text = ''
+        # extra_text = ' ({} Movies)'.format(len(df))
     else:
         extra_text = ''
     header_text = header_text + extra_text
@@ -418,7 +438,7 @@ def make_sub_images(df, header_text=None):
     return out_pages
 
 
-def add_watermark(main_img, text='github.com/RollingStar/movie-poster-download'):
+def add_watermark(main_img, text='*Rewatch. github.com/RollingStar/movie-poster-download'):
     '''Add text watermark to image at the bottom-right.'''
     # make a bigger canvas for the watermark
     bigger_canvas = Image.new(
@@ -426,8 +446,9 @@ def add_watermark(main_img, text='github.com/RollingStar/movie-poster-download')
     bigger_canvas.paste(main_img, (0, 0))
     draw = ImageDraw.Draw(bigger_canvas)
     myfont = ImageFont.truetype("arial.ttf", 12)
-    # found through trial and error of Arial at 12 point size
-    x_pixels_needed = 265
+    tw, th = draw.textsize(text, font=myfont)
+    x_pad = draw.textsize("a", font=myfont)[0]
+    x_pixels_needed = math.ceil(tw + (x_pad * 0.75))
     draw.multiline_text(((main_img.width - x_pixels_needed), main_img.height), text,
                         font=myfont, fill='black', align="left")
     return(bigger_canvas)
@@ -456,7 +477,7 @@ def make_images_by_rating(df):
         total_width = max(total_width, img.width)
     main_img = Image.new("RGBA", (total_width, total_height), color=BG_COLOR)
     height_so_far = 0
-    write_sub_files = True
+    write_sub_files = False
     for jj, img in enumerate(sub_imgs):
         main_img.paste(img, (0, height_so_far))
         # start the next paste below the current one
@@ -474,10 +495,19 @@ def make_images_by_rating(df):
     return final_img
 
 
+def is_rewatch(df):
+    rewatch = False
+    if not (pd.isnull(df['date_rated_y'])):
+        if df.date_rated != df.date_rated_y:
+            rewatch = True
+    return rewatch
+
+
 def postprocess_df(df):
     if len(df) < 1:
         log.warning("Empty DF?")
         pdb.set_trace()
+    df.drop('date_rated', axis=1)
     df['title_sort'] = df[['movie']].apply(func=title_sort, axis='columns')
     # sort the df how we want it
     df = df.sort_values(by="title_sort")
@@ -502,10 +532,32 @@ if __name__ == "__main__":
     MAX_DATE = args.ed
     FILENAME_PREFIX = now.strftime('%Y-%m-%d')
 
-    # run the code
-    df = imdb_csv_to_pandas(CSV_FILE)
+    import os
+    from pathlib import Path
+    paths = sorted(Path(MAIN_DIR).iterdir(), key=os.path.getmtime)
+    csv_paths = []
+    for path in paths:
+        if "ratings" in str(path):
+            if "csv" in str(path):
+                csv_paths.append(path)
+    df_list = []
+    for path in csv_paths:
+        df_list.append(imdb_csv_to_pandas(path))
+    # for mydf in df_list:
+    #     print(mydf.loc[mydf['movie'] == "The Endless Summer"])
+    #     print(
+    #         dir(mydf.loc[mydf['movie'] == "The Endless Summer"]['date_rated']))
+    #     newdf.append(mydf.loc[mydf['movie'] == "The Endless Summer"])
+    if len(df_list) > 1:
+        combined = pd.merge(df_list[-1], df_list[0], how='left',
+                            on='Const', suffixes=(None, "_y"), validate="one_to_one")
+        df = combined
+        df['rewatch'] = df.apply(is_rewatch, axis=1)
+    else:
+        # don't merge since there's nothing to merge
+        df = df_list[0]
+    df = df.loc[df['date_rated'] >= pd.to_datetime(MIN_DATE)]
+    df = df.loc[df['date_rated'] <= pd.to_datetime(MAX_DATE)]
     # do stuff we can only do after we get the JSONs
     df = postprocess_df(df)
-
-    # temp commenting out
     make_images_by_rating(df)
