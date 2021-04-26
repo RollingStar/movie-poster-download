@@ -8,6 +8,8 @@ import unicodedata
 import unidecode
 import logging
 import wget
+import os
+from pathlib import Path
 # pillow, fork of PIL
 from PIL import Image, ImageFont, ImageDraw
 import pdb
@@ -15,6 +17,7 @@ import pandas as pd
 import re
 import numpy as np
 from datetime import datetime
+
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -51,9 +54,11 @@ def good_imdb_header(head_str):
     return (head_str == CSV_HEADER)
 
 
-def five_star_scale(rating):
-    # convert imdb-like 10-point scale to a 5-star scale
-    return(str(math.ceil(int(rating) / 2)))
+def five_star_scale(rating, scale=5):
+    imdb_scale = 10
+    scale_factor = imdb_scale/scale
+    # convert imdb-like 10-point scale to an X-star scale
+    return(str(math.ceil(int(rating) / scale_factor)))
 
 
 def row_dl_poster(df_row):
@@ -102,7 +107,7 @@ def get_neg_rating(rating):
     return (-1 * int(rating))
 
 
-def imdb_csv_to_pandas(file):
+def imdb_csv_to_pandas(file, scale=5, genre=None):
     with open(file, 'r') as f:
         d = f.read()
         head_str = d.split('\n', 1)[0]
@@ -110,16 +115,19 @@ def imdb_csv_to_pandas(file):
             log.warning("Header:\n{}\ndoes not match expectation:\n{}".format(
                 head_str, CSV_HEADER))
     df = pd.read_csv(file, encoding='latin-1')
+    log.debug(len(df))
     df = df[df['Title Type'].isin(WANTED_TYPES)]
-    df = df.rename(columns={'Title': 'movie',
-                            'Year': 'year', 'Date Rated': 'date_rated',
-                            "Runtime (mins)": 'runtime'})
+    log.debug(len(df))
+    if genre:
+        df = df[df['Genres'].str.contains(genre)]
+        log.debug(len(df))
+    df = df.rename(columns = {'Title': 'movie', 'Year': 'year', 'Date Rated': 'date_rated', 'Runtime (mins)': 'runtime'}, inplace=False)
+    log.debug(len(df))
     df = df.astype({'year': 'int64'})
-    df['rating'] = df['Your Rating'].map(five_star_scale)
+    df['rating'] = df['Your Rating'].apply(five_star_scale, args=[scale])
     # to be sorted on in pandas group by. tried something more logical, didn't work.
     df['negative_rating'] = df['rating'].map(get_neg_rating)
-    df['base_filename'] = df[['movie', 'year', 'Const']].apply(
-        func=filename_from_df, axis='columns')
+    df['base_filename'] = df[['movie', 'year', 'Const']].apply(func=filename_from_df, axis='columns')
     df['date_rated'] = pd.to_datetime(df['date_rated'])
     # need to subset after looking backwards for rewatches
     # df = df.loc[df['date_rated'] >= pd.to_datetime(MIN_DATE)]
@@ -131,6 +139,8 @@ def imdb_csv_to_pandas(file):
         func=row_dl_poster,  axis='columns')
     df = df[['movie', 'year', 'rating', 'base_filename',
              'negative_rating', 'date_rated', 'Const']]
+    if len(df) <= 0:
+        Exception("DF has no rows.")
     return(df)
 
 # https://stackoverflow.com/questions/319426/how-do-i-do-a-case-insensitive-string-comparison/29247821
@@ -203,7 +213,7 @@ def find_title_in_results(json_file, movie_title, year):
             json_year = json_file['results'][m]["release_date"][0:4]
             if year == json_year:
                 return {"ind": m, "type": "year"}
-        # we couldn't find a match
+        log.warning("we couldn't find a match")
         pdb.set_trace()
         return {"ind": -1, "type": "fail"}
     if "movie_results" in j:
@@ -279,18 +289,9 @@ def download_poster(movie_title, year, base_filename,
         copy_none_poster()
         return(movie_title)
 
-
-# https://stackoverflow.com/questions/250357/truncate-a-string-without-ending-in-the-middle-of-a-word
-def smart_truncate(content, length=100, suffix='...'):
-    if len(content) <= length:
-        return content
-    else:
-        return content[:length].rsplit(' ', 1)[0] + suffix
-
-
-def word_truncate(content, suffix='...'):
-    '''Truncate on a whole word and add suffix.'''
-    return content.rsplit(' ', 1)[0] + suffix
+def word_truncate(content):
+    '''Truncate on a whole word.'''
+    return content.rsplit(' ', 1)[0]
 
 
 def make_single_poster(df, folder_of_posters, font):
@@ -322,15 +323,32 @@ def make_single_poster(df, folder_of_posters, font):
         title_print = title_print + '*'
     tw, th = draw.textsize(title_print, font=font)
     suffix = '...'
+    ii = 0
+    tried_colon = False
     while tw > POSTER_WIDTH:
-        title_print = word_truncate(title_print, suffix)
-        # account for a long first word (impossible to truncate)
-        if len(title_print) <= len(suffix):
-            title_print = df['movie'][:5] + suffix
+        if ii > 20:
+            pdb.set_trace()
+        rewatch_space = 0
         if df['rewatch']:
-            title_print = title_print + '*'
+            title_print = '*' + title_print
+            rewatch_space = len('*')
+        long_first_word = (title_print == word_truncate(title_print))
+        title_print = word_truncate(title_print)
+        if long_first_word:
+            chop_amt = len(suffix) + 1 + rewatch_space
+            print(title_print)
+            title_print = title_print[:(-chop_amt)]
+            if title_print.endswith(" "):
+                title_print = title_print[:-1]
+        if title_print.endswith(":") and (not tried_colon):
+            title_print = title_print + ' '
+            # avoid ifinite loop
+            tried_colon = True
+        title_print = title_print + suffix
+        if df['rewatch']:
+            title_print = title_print[1:] + '*'
         tw, th = draw.textsize(title_print, font=font)
-        log.debug("{} {} Looping...".format(title_print, tw))
+        ii += 1
 
     tw, th = draw.textsize(title_print, font=font)
     # align text to the same spot, regardless of few-pixel
@@ -438,8 +456,10 @@ def make_sub_images(df, header_text=None):
     return out_pages
 
 
-def add_watermark(main_img, text='*Rewatch. github.com/RollingStar/movie-poster-download'):
+def add_watermark(main_img, df_len=0,
+    text='*Rewatch. github.com/RollingStar/movie-poster-download'):
     '''Add text watermark to image at the bottom-right.'''
+    text = str(df_len) + ' Movies.' + ' ' + text
     # make a bigger canvas for the watermark
     bigger_canvas = Image.new(
         "RGBA", (main_img.width, (20 + main_img.height)), color=BG_COLOR)
@@ -454,7 +474,7 @@ def add_watermark(main_img, text='*Rewatch. github.com/RollingStar/movie-poster-
     return(bigger_canvas)
 
 
-def make_images_by_rating(df):
+def make_images_by_rating(df, scale=5, write_sub_files=False):
     '''Split `df` into rating categories and draw pages with rating
     text on each one.'''
     filled_star = '★'
@@ -463,7 +483,7 @@ def make_images_by_rating(df):
     for ii, subdf in df.groupby(by='negative_rating'):
         rating = int(subdf.iloc[0]['rating'])
         rating_text = filled_star * rating
-        rating_text = rating_text + (empty_star * (5 - rating))
+        rating_text = rating_text + (empty_star * (scale - rating))
         # sorted_df = subdf.sort_values(by='title_sort')
         subdf.sort_values(by='title_sort')
         new_imgs = make_sub_images(subdf, header_text=rating_text)
@@ -486,7 +506,8 @@ def make_images_by_rating(df):
             out_path = os.path.join(
                 OUTPUT_DIR, 'all-movies-' + FILENAME_PREFIX + '_' + str(jj) + '.png')
             img.save(out_path)
-    final_img = add_watermark(main_img)
+    df_len = len(df)
+    final_img = add_watermark(main_img, df_len)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     out_path = os.path.join(
         OUTPUT_DIR, 'all-movies-' + FILENAME_PREFIX + '.png')
@@ -497,6 +518,7 @@ def make_images_by_rating(df):
 
 def is_rewatch(df):
     rewatch = False
+    # think there's a bug here if you only have 1 ratings.csv (no date_rated_y)
     if not (pd.isnull(df['date_rated_y'])):
         if df.date_rated != df.date_rated_y:
             rewatch = True
@@ -519,6 +541,7 @@ def postprocess_df(df):
 
 
 if __name__ == "__main__":
+    # i think there's a bug in is_rewatch
     # init dates
     now = datetime.today()
     parser = argparse.ArgumentParser(description='Download movie posters and make images from them.',
@@ -527,13 +550,18 @@ if __name__ == "__main__":
                         help="Start date (YYYY-MM-DD). Only include ratings from this date onward.")
     parser.add_argument('-ed', default="2099-12-31",
                         help="End date (YYYY-MM-DD). Only include ratings from before this date.")
+    parser.add_argument('-p', '--points', default=5,
+                        help="Number of points in the scale. 5=5 star, 10=10 star (IMDB) etc.")
+    parser.add_argument('-g', '--genre', default=None,
+                        help="genre")
     args = parser.parse_args()
     MIN_DATE = args.sd
     MAX_DATE = args.ed
-    FILENAME_PREFIX = now.strftime('%Y-%m-%d')
-
-    import os
-    from pathlib import Path
+    USER_SCALE = int(args.points)
+    SAVE_SUB_FILES = False
+    # DO NOT CAST THIS TO A STRING! 'None' is not None!
+    U_GENRE = args.genre
+    FILENAME_PREFIX = now.strftime('%Y%m%d-%H%M%S')
     paths = sorted(Path(MAIN_DIR).iterdir(), key=os.path.getmtime)
     csv_paths = []
     for path in paths:
@@ -541,13 +569,9 @@ if __name__ == "__main__":
             if "csv" in str(path):
                 csv_paths.append(path)
     df_list = []
+    log.debug(csv_paths)
     for path in csv_paths:
-        df_list.append(imdb_csv_to_pandas(path))
-    # for mydf in df_list:
-    #     print(mydf.loc[mydf['movie'] == "The Endless Summer"])
-    #     print(
-    #         dir(mydf.loc[mydf['movie'] == "The Endless Summer"]['date_rated']))
-    #     newdf.append(mydf.loc[mydf['movie'] == "The Endless Summer"])
+        df_list.append(imdb_csv_to_pandas(path, scale=USER_SCALE, genre=U_GENRE))
     if len(df_list) > 1:
         combined = pd.merge(df_list[-1], df_list[0], how='left',
                             on='Const', suffixes=(None, "_y"), validate="one_to_one")
@@ -560,4 +584,4 @@ if __name__ == "__main__":
     df = df.loc[df['date_rated'] <= pd.to_datetime(MAX_DATE)]
     # do stuff we can only do after we get the JSONs
     df = postprocess_df(df)
-    make_images_by_rating(df)
+    make_images_by_rating(df, USER_SCALE, SAVE_SUB_FILES)
