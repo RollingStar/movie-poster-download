@@ -29,8 +29,8 @@ pip install pandas
 # Usage
 
 ```
-python program.py -h
-usage: program.py [-h] [-sd SD] [-ed ED] [-p POINTS] [-g GENRE]
+python movie-poster-dl.py -h
+usage: movie-poster-dl.py [-h] [-sd SD] [-ed ED] [-p POINTS] [-g GENRE]
 
 Download movie posters and make images from them.
 
