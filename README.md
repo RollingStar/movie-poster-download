@@ -29,8 +29,8 @@ pip install pandas
 # Usage
 
 ```
-python program.py -h
-usage: program.py [-h] [-sd SD] [-ed ED] [-p POINTS] [-g GENRE]
+py movie-poster-dl.py -h
+usage: movie-poster-dl.py [-h] [-sd SD] [-ed ED] [-p POINTS] [-g GENRE] [-s SUBFILES] [-e EXPORT] [--skip | --no-skip]
 
 Download movie posters and make images from them.
 
@@ -42,6 +42,11 @@ optional arguments:
                         Number of points in the scale. 5=5 star, 10=10 star (IMDB) etc. (default: 5)
   -g GENRE, --genre GENRE
                         genre (default: None)
+  -s SUBFILES, --subfiles SUBFILES
+                        Save a separate file for each star rating (default: False)
+  -e EXPORT, --export EXPORT
+                        Save a CSV filtered by the app (ex., only one genre, only 40m+ films) (default: False)
+  --skip, --no-skip     Skip the final save (prep and export only) (default: False) (default: False)
 ```
 
 # Directory structure
