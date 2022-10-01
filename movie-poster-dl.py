@@ -20,15 +20,20 @@ import numpy as np
 from datetime import datetime
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
+
+# init dates
+now = datetime.today()
 
 MAIN_DIR = os.path.dirname(os.path.realpath(__file__))
 KEY = open(os.path.join(MAIN_DIR, "api.txt")).read()
-CSV_FILE = os.path.join(MAIN_DIR, "ratings.csv")
+# CSV_FILE = os.path.join(MAIN_DIR, "ratings.csv")
 POSTER_DIR = os.path.join(MAIN_DIR, "posters")
 JSON_DIR = os.path.join(MAIN_DIR, "json")
 OUTPUT_DIR = os.path.join(MAIN_DIR, "output")
+FILENAME_PREFIX = now.strftime("%Y%m%d-%H%M%S")
+EXPORT_FILENAME = os.path.join(MAIN_DIR, "export" + "_" + FILENAME_PREFIX + ".csv")
 # possible types are ['movie', 'short', 'tvEpisode', 'tvMiniSeries', 'tvMovie', 'tvSeries', 'tvShort', 'tvSpecial', 'video']
 WANTED_TYPES = ["movie", "tvMovie", "tvSpecial", "video"]
 # does the header depend on the language of the user requesting the CSV?
@@ -224,11 +229,13 @@ def search_movie(imdb_id, movie_title, base_filename, json_dir=JSON_DIR):
         url = base_url + unidecode.unidecode(movie_title).replace(" ", "+")
     os.makedirs(json_dir, exist_ok=True)
     json_filename = os.path.join(json_dir, base_filename + ".json")
-    # see if it's cached
-    if os.path.isfile(json_filename):
+    cached = os.path.isfile(json_filename)
+    if cached:
         return json_filename
-    wget.download(url, json_filename)
-    return json_filename
+    else:
+        wget.download(url, json_filename)
+        log.debug("\n")  # wget logs to debug without /n
+        return json_filename
 
 
 def find_title_in_results(json_file, movie_title, year):
@@ -320,7 +327,7 @@ def download_poster(
         if j["poster_path"] is None:
             # maybe we manually put a poster in the right spot
             if os.path.exists(out_filename):
-                logging.warning(
+                logging.debug(
                     "Using local filesystem poster, none found online: {}".format(
                         movie_title
                     )
@@ -334,6 +341,7 @@ def download_poster(
             )
             if not os.path.isfile(out_filename):
                 wget.download(poster_url, out_filename)
+                log.debug("\n")  # wget logs to debug without /n
         return j["title"]
     else:
         copy_none_poster()
@@ -348,9 +356,8 @@ def word_truncate(content):
 def make_single_poster(df, folder_of_posters, font):
     """combine a poster with its label text.
     `df`: a row of the DF (one movie)."""
-    in_poster = Image.open(
-        os.path.join(folder_of_posters, df["base_filename"] + ".jpg")
-    )
+    poster_path = os.path.join(folder_of_posters, df["base_filename"] + ".jpg")
+    in_poster = Image.open(poster_path)
     width = in_poster.width
     in_height = in_poster.height
     scale_factor = in_height / int(POSTER_HEIGHT)
@@ -372,11 +379,13 @@ def make_single_poster(df, folder_of_posters, font):
     title_print = df["movie"]
     if df["rewatch"]:
         title_print = title_print + "*"
-    tw, th = draw.textsize(title_print, font=font)
+    # deprecated
+    # textw, texth = draw.textsize(title_print, font=font)
+    textw = draw.textlength(title_print, font=font)
     suffix = "..."
     ii = 0
     tried_colon = False
-    while tw > POSTER_WIDTH:
+    while textw > POSTER_WIDTH:
         if ii > 20:
             pdb.set_trace()
         rewatch_space = 0
@@ -393,19 +402,22 @@ def make_single_poster(df, folder_of_posters, font):
                 title_print = title_print[:-1]
         if title_print.endswith(":") and (not tried_colon):
             title_print = title_print + " "
-            # avoid ifinite loop
+            # avoid infinite loop
             tried_colon = True
         title_print = title_print + suffix
         if df["rewatch"]:
             title_print = title_print[1:] + "*"
-        tw, th = draw.textsize(title_print, font=font)
+        # textw, texth = draw.textsize(title_print, font=font)
+        textw = draw.textlength(title_print, font=font)
         ii += 1
 
-    tw, th = draw.textsize(title_print, font=font)
+    # textw, texth = draw.textsize(title_print, font=font)
+    textw = draw.textlength(title_print, font=font)
     # align text to the same spot, regardless of few-pixel
     # variations in individual poster height.
     text_y = int(POSTER_HEIGHT * (1 + 0.03))
     draw.text((0, text_y), title_print, font=font, fill="black")
+    log.debug("{} {}".format(title_print, poster_path))
     return out_img
 
 
@@ -515,9 +527,16 @@ def add_watermark(
     bigger_canvas.paste(main_img, (0, 0))
     draw = ImageDraw.Draw(bigger_canvas)
     myfont = ImageFont.truetype("arial.ttf", 12)
-    tw, th = draw.textsize(text, font=myfont)
-    x_pad = draw.textsize("a", font=myfont)[0]
-    x_pixels_needed = math.ceil(tw + (x_pad * 0.75))
+    # deprecated
+    # textw, texth = draw.textsize(text, font=myfont)
+    textw = draw.textlength(text, font=myfont)
+    # log.debug("textw: {}".format(textw))
+    # log.debug("newl: {}".format(newl))
+    # deprecated
+    # x_pad = draw.textsize("a", font=myfont)[0]
+    pad_text = "a"  # space out the text as far as "a" is wide
+    x_pad = draw.textlength(pad_text, font=myfont)
+    x_pixels_needed = math.ceil(textw + (x_pad * 0.75))
     draw.multiline_text(
         ((main_img.width - x_pixels_needed), main_img.height),
         text,
@@ -613,7 +632,7 @@ def get_max_date(df):
     return max_date
 
 
-def save_csv(df, fname="export.csv"):
+def save_csv(df, fname=EXPORT_FILENAME):
     tdf = df
     tdf = tdf.rename(
         columns={
@@ -632,8 +651,6 @@ def save_csv(df, fname="export.csv"):
 
 if __name__ == "__main__":
     # i think there's a bug in is_rewatch
-    # init dates
-    now = datetime.today()
     parser = argparse.ArgumentParser(
         description="Download movie posters and make images from them.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -652,7 +669,7 @@ if __name__ == "__main__":
         "-p",
         "--points",
         default=5,
-        help="Number of points in the scale. 5=5 star, 10=10 star (IMDB) etc.",
+        help="Number of points in the scale. 5=5 star, 10=10 star (IMDB/Letterboxd import) etc.",
     )
     parser.add_argument("-g", "--genre", default=None, help="genre")
     parser.add_argument(
@@ -681,7 +698,7 @@ if __name__ == "__main__":
     SAVE_SUB_FILES = args.subfiles
     # DO NOT CAST THIS TO A STRING! 'None' is not None!
     U_GENRE = args.genre
-    FILENAME_PREFIX = now.strftime("%Y%m%d-%H%M%S")
+    # os.path.join(MAIN_DIR, FILENAME_PREFIX)
     paths = sorted(Path(MAIN_DIR).iterdir(), key=os.path.getmtime)
     csv_paths = []
     for path in paths:
@@ -692,18 +709,24 @@ if __name__ == "__main__":
     log.debug(csv_paths)
     for path in csv_paths:
         df_list.append(imdb_csv_to_pandas(path, scale=USER_SCALE, genre=U_GENRE))
-    if len(df_list) > 1:
+    len_dfs = len(df_list)
+    # looks like it only considers the oldest and newest file.
+    # so if you want to show a movie rewatched in the same period, it will only show one of the two ratings.
+    if len_dfs > 1:
+        log.debug("Merging {} lists".format(len_dfs))
         combined = pd.merge(
-            df_list[-1],
-            df_list[0],
+            df_list[-1],  # last?
+            df_list[0],  # first?
             how="left",
             on="Const",
             suffixes=(None, "_y"),
             validate="one_to_one",
         )
         df = combined
+        log.debug("Doing rewatch calc")
         df["rewatch"] = df.apply(is_rewatch, axis=1)
     else:
+        log.critical("Nothing to merge")
         # don't merge since there's nothing to merge
         df = df_list[0]
     df = df.loc[df["date_rated"] >= pd.to_datetime(MIN_DATE)]
@@ -711,8 +734,8 @@ if __name__ == "__main__":
     # do stuff we can only do after we get the JSONs
     df = postprocess_df(df)
     df["max_date"] = df.apply(get_max_date, axis=1)
-    if args.export:
-        save_csv(df)
     print(args.skip)
     if not args.skip:
         make_images_by_rating(df, USER_SCALE, write_sub_files=SAVE_SUB_FILES)
+    if args.export:
+        save_csv(df)
